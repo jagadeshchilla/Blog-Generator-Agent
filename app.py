@@ -68,16 +68,33 @@ async def create_blogs_from_topic(request: TopicBlogRequest):
 
     try:
         ## get the llm object
-        groqllm=GroqLLM()
-        llm=groqllm.get_llm()
+        groqllm = GroqLLM()
+        llm = groqllm.get_llm()
 
         ## get the graph
-        graph_builder=GraphBuilder(llm)
-        graph=graph_builder.setup_graph(usecase="topic")
-        state=graph.invoke({
-            "topic": topic,
-            "current_language": language.lower()
-        })
+        graph_builder = GraphBuilder(llm)
+        graph = graph_builder.setup_graph(usecase="topic")
+        
+        try:
+            state = graph.invoke({
+                "topic": topic,
+                "current_language": language.lower()
+            })
+        except Exception as e:
+            # Check if it's a rate limit error
+            error_str = str(e)
+            if groqllm.should_use_fallback(error_str):
+                print("Rate limit detected, retrying with fallback model...")
+                # Retry with fallback model
+                llm = groqllm.get_llm(use_fallback=True)
+                graph_builder = GraphBuilder(llm)
+                graph = graph_builder.setup_graph(usecase="topic")
+                state = graph.invoke({
+                    "topic": topic,
+                    "current_language": language.lower()
+                })
+            else:
+                raise
 
         # Include video_id in response if available
         result = {"data": state}
@@ -107,16 +124,33 @@ async def create_blogs_from_youtube(request: YouTubeBlogRequest):
 
     try:
         ## get the llm object
-        groqllm=GroqLLM()
-        llm=groqllm.get_llm()
+        groqllm = GroqLLM()
+        llm = groqllm.get_llm()
 
         ## get the graph
-        graph_builder=GraphBuilder(llm)
-        graph=graph_builder.setup_graph(usecase="youtube")
-        state=graph.invoke({
-            "youtube_url": youtube_url,
-            "current_language": language.lower()
-        })
+        graph_builder = GraphBuilder(llm)
+        graph = graph_builder.setup_graph(usecase="youtube")
+        
+        try:
+            state = graph.invoke({
+                "youtube_url": youtube_url,
+                "current_language": language.lower()
+            })
+        except Exception as e:
+            # Check if it's a rate limit error
+            error_str = str(e)
+            if groqllm.should_use_fallback(error_str):
+                print("Rate limit detected, retrying with fallback model...")
+                # Retry with fallback model
+                llm = groqllm.get_llm(use_fallback=True)
+                graph_builder = GraphBuilder(llm)
+                graph = graph_builder.setup_graph(usecase="youtube")
+                state = graph.invoke({
+                    "youtube_url": youtube_url,
+                    "current_language": language.lower()
+                })
+            else:
+                raise
 
         # Include video_id in response if available
         result = {"data": state}

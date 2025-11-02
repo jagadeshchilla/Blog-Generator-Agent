@@ -164,18 +164,39 @@ class BlogNode:
             if not video_id:
                 raise ValueError("Invalid YouTube URL format")
             
-            # Try yt-dlp first (more reliable for cloud environments)
+            # Try youtube-transcript-api first (more reliable, simpler)
+            transcript_text = None
+            yt_dlp_error = None
+            ytt_error = None
+            
+            # Method 1: Try youtube-transcript-api (simpler, less dependencies)
+            try:
+                from youtube_transcript_api import YouTubeTranscriptApi
+                print(f"Attempting to get transcript for video_id: {video_id}")
+                ytt_api = YouTubeTranscriptApi()
+                transcript_list = ytt_api.get_transcript(video_id, languages=['en', 'en-US', 'en-GB'])
+                transcript_text = " ".join([item['text'] for item in transcript_list])
+                print(f"Successfully got transcript via youtube-transcript-api, length: {len(transcript_text)}")
+                return {"transcript": transcript_text, "video_id": video_id}
+            except Exception as e:
+                ytt_error = str(e)
+                print(f"youtube-transcript-api failed: {ytt_error}")
+                # Continue to try yt-dlp fallback
+            
+            # Method 2: Fallback to yt-dlp
             try:
                 import yt_dlp
+                print(f"Attempting yt-dlp for video: {youtube_url}")
                 
                 # Configure yt-dlp options
                 ydl_opts = {
                     'skip_download': True,
                     'writesubtitles': True,
                     'writeautomaticsub': True,
-                    'subtitleslangs': ['en'],
+                    'subtitleslangs': ['en', 'en-US', 'en-GB'],
                     'quiet': True,
                     'no_warnings': True,
+                    'extract_flat': False,
                 }
                 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -184,41 +205,54 @@ class BlogNode:
                     
                     # Try to get subtitles from info
                     subtitles = info.get('subtitles', {}) or info.get('automatic_captions', {})
+                    print(f"yt-dlp found subtitles: {bool(subtitles)}")
                     
                     if subtitles:
                         # Try English subtitles first
-                        en_subs = subtitles.get('en', []) or subtitles.get('en-US', []) or subtitles.get('en-GB', [])
+                        en_subs = (subtitles.get('en', []) or 
+                                  subtitles.get('en-US', []) or 
+                                  subtitles.get('en-GB', []))
                         if not en_subs:
                             # Try any available language
-                            en_subs = list(subtitles.values())[0] if subtitles else []
+                            all_subs = list(subtitles.values())
+                            en_subs = all_subs[0] if all_subs else []
                         
-                        if en_subs:
+                        if en_subs and len(en_subs) > 0:
                             sub_url = en_subs[0].get('url', '')
                             if sub_url:
+                                print(f"Downloading subtitle from URL: {sub_url[:50]}...")
                                 # Download subtitle content
                                 import urllib.request
-                                sub_response = urllib.request.urlopen(sub_url)
+                                sub_response = urllib.request.urlopen(sub_url, timeout=10)
                                 sub_data = sub_response.read().decode('utf-8')
                                 
                                 # Parse subtitle format
                                 transcript_text = self._parse_subtitle(sub_data)
+                                print(f"Successfully got transcript via yt-dlp, length: {len(transcript_text)}")
                                 return {"transcript": transcript_text, "video_id": video_id}
-            except ImportError:
-                # yt-dlp not available, fall through to fallback
-                pass
-            except Exception:
-                # yt-dlp failed, fall through to fallback
-                pass
+                    else:
+                        print("No subtitles found in video info")
+                        
+            except ImportError as e:
+                yt_dlp_error = f"yt-dlp not installed: {str(e)}"
+                print(yt_dlp_error)
+            except Exception as e:
+                yt_dlp_error = str(e)
+                print(f"yt-dlp failed: {yt_dlp_error}")
             
-            # Fallback: Try youtube-transcript-api as backup
-            try:
-                from youtube_transcript_api import YouTubeTranscriptApi
-                ytt_api = YouTubeTranscriptApi()
-                transcript = ytt_api.get_transcript(video_id)
-                transcript_text = " ".join([item['text'] for item in transcript])
-                return {"transcript": transcript_text, "video_id": video_id}
-            except Exception:
-                raise ValueError("Transcript not available for this video. The video may not have subtitles/transcripts enabled.")
+            # If both methods failed, provide detailed error
+            error_details = []
+            if ytt_error:
+                error_details.append(f"youtube-transcript-api: {ytt_error}")
+            if yt_dlp_error:
+                error_details.append(f"yt-dlp: {yt_dlp_error}")
+            
+            error_msg = "Failed to extract transcript. "
+            if "blocking requests" in str(ytt_error).lower() or "ip" in str(ytt_error).lower():
+                error_msg += "YouTube is blocking requests from this IP (cloud provider). "
+            error_msg += "Methods attempted: " + "; ".join(error_details) if error_details else "No methods available"
+            
+            raise ValueError(error_msg)
                 
         except ValueError:
             raise
