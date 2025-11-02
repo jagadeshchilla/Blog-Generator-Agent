@@ -170,75 +170,86 @@ class BlogNode:
             ytt_error = None
             
             # Method 1: Try youtube-transcript-api (simpler, less dependencies)
+            print(f"[1/2] Attempting youtube-transcript-api for video_id: {video_id}")
             try:
                 from youtube_transcript_api import YouTubeTranscriptApi
-                print(f"Attempting to get transcript for video_id: {video_id}")
                 ytt_api = YouTubeTranscriptApi()
                 transcript_list = ytt_api.get_transcript(video_id, languages=['en', 'en-US', 'en-GB'])
                 transcript_text = " ".join([item['text'] for item in transcript_list])
-                print(f"Successfully got transcript via youtube-transcript-api, length: {len(transcript_text)}")
+                print(f"[SUCCESS] Got transcript via youtube-transcript-api, length: {len(transcript_text)}")
                 return {"transcript": transcript_text, "video_id": video_id}
             except Exception as e:
                 ytt_error = str(e)
-                print(f"youtube-transcript-api failed: {ytt_error}")
-                # Continue to try yt-dlp fallback
+                print(f"[FAILED] youtube-transcript-api error: {ytt_error}")
+                import traceback
+                print(f"youtube-transcript-api traceback: {traceback.format_exc()}")
             
-            # Method 2: Fallback to yt-dlp
-            try:
-                import yt_dlp
-                print(f"Attempting yt-dlp for video: {youtube_url}")
-                
-                # Configure yt-dlp options
-                ydl_opts = {
-                    'skip_download': True,
-                    'writesubtitles': True,
-                    'writeautomaticsub': True,
-                    'subtitleslangs': ['en', 'en-US', 'en-GB'],
-                    'quiet': True,
-                    'no_warnings': True,
-                    'extract_flat': False,
-                }
-                
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    # Get video info (this doesn't download, just gets metadata)
-                    info = ydl.extract_info(youtube_url, download=False)
+            # Method 2: Fallback to yt-dlp (but skip if bot detection expected)
+            # Skip yt-dlp if youtube-transcript-api failed due to IP blocking - same issue will occur
+            if ytt_error and ("blocking" in ytt_error.lower() or "ip" in ytt_error.lower() or "cloud" in ytt_error.lower()):
+                print("[SKIP] Skipping yt-dlp due to IP blocking (same issue will occur)")
+                yt_dlp_error = "Skipped (IP blocking detected from previous method)"
+            else:
+                print(f"[2/2] Attempting yt-dlp for video: {youtube_url}")
+                try:
+                    import yt_dlp
                     
-                    # Try to get subtitles from info
-                    subtitles = info.get('subtitles', {}) or info.get('automatic_captions', {})
-                    print(f"yt-dlp found subtitles: {bool(subtitles)}")
+                    # Configure yt-dlp options with better bot avoidance
+                    ydl_opts = {
+                        'skip_download': True,
+                        'writesubtitles': True,
+                        'writeautomaticsub': True,
+                        'subtitleslangs': ['en', 'en-US', 'en-GB'],
+                        'quiet': True,
+                        'no_warnings': True,
+                        'extract_flat': False,
+                        # Try to reduce bot detection
+                        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    }
                     
-                    if subtitles:
-                        # Try English subtitles first
-                        en_subs = (subtitles.get('en', []) or 
-                                  subtitles.get('en-US', []) or 
-                                  subtitles.get('en-GB', []))
-                        if not en_subs:
-                            # Try any available language
-                            all_subs = list(subtitles.values())
-                            en_subs = all_subs[0] if all_subs else []
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        # Get video info (this doesn't download, just gets metadata)
+                        info = ydl.extract_info(youtube_url, download=False)
                         
-                        if en_subs and len(en_subs) > 0:
-                            sub_url = en_subs[0].get('url', '')
-                            if sub_url:
-                                print(f"Downloading subtitle from URL: {sub_url[:50]}...")
-                                # Download subtitle content
-                                import urllib.request
-                                sub_response = urllib.request.urlopen(sub_url, timeout=10)
-                                sub_data = sub_response.read().decode('utf-8')
-                                
-                                # Parse subtitle format
-                                transcript_text = self._parse_subtitle(sub_data)
-                                print(f"Successfully got transcript via yt-dlp, length: {len(transcript_text)}")
-                                return {"transcript": transcript_text, "video_id": video_id}
-                    else:
-                        print("No subtitles found in video info")
+                        # Try to get subtitles from info
+                        subtitles = info.get('subtitles', {}) or info.get('automatic_captions', {})
+                        print(f"yt-dlp found subtitles: {bool(subtitles)}")
                         
-            except ImportError as e:
-                yt_dlp_error = f"yt-dlp not installed: {str(e)}"
-                print(yt_dlp_error)
-            except Exception as e:
-                yt_dlp_error = str(e)
-                print(f"yt-dlp failed: {yt_dlp_error}")
+                        if subtitles:
+                            # Try English subtitles first
+                            en_subs = (subtitles.get('en', []) or 
+                                      subtitles.get('en-US', []) or 
+                                      subtitles.get('en-GB', []))
+                            if not en_subs:
+                                # Try any available language
+                                all_subs = list(subtitles.values())
+                                en_subs = all_subs[0] if all_subs else []
+                            
+                            if en_subs and len(en_subs) > 0:
+                                sub_url = en_subs[0].get('url', '')
+                                if sub_url:
+                                    print(f"Downloading subtitle from URL: {sub_url[:50]}...")
+                                    # Download subtitle content
+                                    import urllib.request
+                                    sub_response = urllib.request.urlopen(sub_url, timeout=10)
+                                    sub_data = sub_response.read().decode('utf-8')
+                                    
+                                    # Parse subtitle format
+                                    transcript_text = self._parse_subtitle(sub_data)
+                                    print(f"[SUCCESS] Got transcript via yt-dlp, length: {len(transcript_text)}")
+                                    return {"transcript": transcript_text, "video_id": video_id}
+                        else:
+                            print("No subtitles found in video info")
+                            
+                except ImportError as e:
+                    yt_dlp_error = f"yt-dlp not installed: {str(e)}"
+                    print(f"[FAILED] {yt_dlp_error}")
+                except Exception as e:
+                    yt_dlp_error = str(e)
+                    print(f"[FAILED] yt-dlp error: {yt_dlp_error}")
+                    # Check if it's bot detection - skip further attempts
+                    if "bot" in yt_dlp_error.lower() or "sign in" in yt_dlp_error.lower():
+                        print("[BOT DETECTION] YouTube bot detection triggered - cannot proceed without cookies")
             
             # If both methods failed, provide detailed error
             error_details = []
