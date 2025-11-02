@@ -18,6 +18,10 @@ except Exception:
 
 app = FastAPI()
 
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "Blog Generator API is running"}
+
 # Configure CORS
 FRONTEND_URL = os.getenv("FRONTEND_URL", "")
 cors_origins = [
