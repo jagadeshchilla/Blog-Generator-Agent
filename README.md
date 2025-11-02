@@ -2,6 +2,8 @@
 
 An intelligent blog generation application built with LangGraph that creates high-quality blog posts from topics or YouTube video transcripts. Features multi-language support, modern UI, and AI-powered content generation.
 
+🌐 **Live Demo:** [https://blog-generator-agent-five.vercel.app/](https://blog-generator-agent-five.vercel.app/)
+
 ## Features
 
 - 🎯 **Topic-Based Blog Generation** - Generate SEO-friendly blog posts from any topic
@@ -81,6 +83,7 @@ flowchart TD
 
 ## Resources
 
+- [Live Application](https://blog-generator-agent-five.vercel.app/)
 - [LangGraph Documentation](https://github.com/langchain-ai/langgraph)
 - [Groq API](https://console.groq.com/)
 - [LangChain Documentation](https://www.langchain.com/)
