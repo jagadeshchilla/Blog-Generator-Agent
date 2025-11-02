@@ -1,0 +1,12 @@
+langchain
+langgraph
+langchain_community
+langchain_core
+langchain_groq
+fastapi
+uvicorn
+watchdog
+langgraph-cli[inmem]
+youtube-transcript-api
+mangum
+python-dotenv
