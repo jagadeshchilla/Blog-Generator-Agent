@@ -22,6 +22,10 @@ app = FastAPI()
 async def root():
     return {"status": "ok", "message": "Blog Generator API is running"}
 
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "routes": ["/blogs/topic", "/blogs/youtube"]}
+
 # Configure CORS
 FRONTEND_URL = os.getenv("FRONTEND_URL", "")
 cors_origins = [
