@@ -1,7 +1,7 @@
 from src.states.blogstate import BlogState
 from langchain_core.messages import SystemMessage, HumanMessage
 from src.states.blogstate import Blog
-from youtube_transcript_api import YouTubeTranscriptApi
+import re
 
 class BlogNode:
     """
@@ -147,7 +147,7 @@ class BlogNode:
     
     def extract_youtube_transcript(self, state: BlogState):
         """
-        Extract transcript from YouTube URL.
+        Extract transcript from YouTube URL using yt-dlp (more reliable for cloud environments).
         """
         youtube_url = state.get("youtube_url", "")
         if not youtube_url:
@@ -164,27 +164,90 @@ class BlogNode:
             if not video_id:
                 raise ValueError("Invalid YouTube URL format")
             
-            # Get transcript using the new API (v1.2.0+)
-            ytt_api = YouTubeTranscriptApi()
-            transcript = ytt_api.fetch(video_id)
-            transcript_data = transcript.to_raw_data()
-            transcript_text = " ".join([item['text'] for item in transcript_data])
+            # Try yt-dlp first (more reliable for cloud environments)
+            try:
+                import yt_dlp
+                
+                # Configure yt-dlp options
+                ydl_opts = {
+                    'skip_download': True,
+                    'writesubtitles': True,
+                    'writeautomaticsub': True,
+                    'subtitleslangs': ['en'],
+                    'quiet': True,
+                    'no_warnings': True,
+                }
+                
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    # Get video info (this doesn't download, just gets metadata)
+                    info = ydl.extract_info(youtube_url, download=False)
+                    
+                    # Try to get subtitles from info
+                    subtitles = info.get('subtitles', {}) or info.get('automatic_captions', {})
+                    
+                    if subtitles:
+                        # Try English subtitles first
+                        en_subs = subtitles.get('en', []) or subtitles.get('en-US', []) or subtitles.get('en-GB', [])
+                        if not en_subs:
+                            # Try any available language
+                            en_subs = list(subtitles.values())[0] if subtitles else []
+                        
+                        if en_subs:
+                            sub_url = en_subs[0].get('url', '')
+                            if sub_url:
+                                # Download subtitle content
+                                import urllib.request
+                                sub_response = urllib.request.urlopen(sub_url)
+                                sub_data = sub_response.read().decode('utf-8')
+                                
+                                # Parse subtitle format
+                                transcript_text = self._parse_subtitle(sub_data)
+                                return {"transcript": transcript_text, "video_id": video_id}
+            except ImportError:
+                # yt-dlp not available, fall through to fallback
+                pass
+            except Exception:
+                # yt-dlp failed, fall through to fallback
+                pass
             
-            return {"transcript": transcript_text, "video_id": video_id}
+            # Fallback: Try youtube-transcript-api as backup
+            try:
+                from youtube_transcript_api import YouTubeTranscriptApi
+                ytt_api = YouTubeTranscriptApi()
+                transcript = ytt_api.get_transcript(video_id)
+                transcript_text = " ".join([item['text'] for item in transcript])
+                return {"transcript": transcript_text, "video_id": video_id}
+            except Exception:
+                raise ValueError("Transcript not available for this video. The video may not have subtitles/transcripts enabled.")
+                
         except ValueError:
-            # Re-raise ValueError as-is (e.g., invalid URL format)
             raise
         except Exception as e:
             error_msg = str(e).lower()
-            # Check for network-related errors
-            if "nameresolutionerror" in error_msg or "failed to resolve" in error_msg or "getaddrinfo failed" in error_msg:
-                raise ValueError("Network error: Cannot connect to YouTube. Please check your internet connection and DNS settings.")
-            elif "connection" in error_msg and "failed" in error_msg:
-                raise ValueError("Network error: Cannot connect to YouTube. Please check your internet connection.")
-            elif "transcript" in error_msg and "not available" in error_msg:
+            if "transcript" in error_msg and "not available" in error_msg:
                 raise ValueError("Transcript not available for this video. The video may not have subtitles/transcripts enabled.")
             else:
                 raise ValueError(f"Failed to extract transcript: {str(e)}")
+    
+    def _parse_subtitle(self, subtitle_data: str) -> str:
+        """Parse VTT or SRT subtitle format and extract text."""
+        lines = subtitle_data.split('\n')
+        transcript_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            # Skip VTT/SRT timestamps and formatting
+            if not line or line.startswith('WEBVTT') or line.startswith('Kind:') or '-->' in line:
+                continue
+            # Skip sequence numbers in SRT
+            if line.isdigit():
+                continue
+            # Remove HTML tags if present
+            line = re.sub(r'<[^>]+>', '', line)
+            if line:
+                transcript_lines.append(line)
+        
+        return " ".join(transcript_lines)
     
     def generate_blog_from_transcript(self, state: BlogState):
         """

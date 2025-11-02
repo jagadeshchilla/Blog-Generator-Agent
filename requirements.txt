@@ -8,5 +8,6 @@ uvicorn
 watchdog
 langgraph-cli[inmem]
 youtube-transcript-api
+yt-dlp
 python-dotenv
 pydantic
