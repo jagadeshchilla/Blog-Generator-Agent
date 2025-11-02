@@ -9,8 +9,3 @@ wheels/
 # Virtual environments
 .venv
 .env
-
-# Log files (may contain sensitive data)
-*.csv
-logs_result.*
-*.log
