@@ -10,3 +10,4 @@ langgraph-cli[inmem]
 youtube-transcript-api
 mangum
 python-dotenv
+pydantic

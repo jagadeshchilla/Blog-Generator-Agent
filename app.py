@@ -8,7 +8,13 @@ from src.llms.groqllm import GroqLLM
 
 import os
 from dotenv import load_dotenv
-load_dotenv()
+
+# Load .env file if it exists (for local development)
+# In Vercel, environment variables are set automatically
+try:
+    load_dotenv()
+except Exception:
+    pass
 
 app = FastAPI()
 
@@ -19,6 +25,7 @@ cors_origins = [
     "http://localhost:3001",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:3001",
+    "https://blog-generator-agent-five.vercel.app",
 ]
 if FRONTEND_URL:
     cors_origins.append(FRONTEND_URL)
